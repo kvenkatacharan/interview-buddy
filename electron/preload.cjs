@@ -6,9 +6,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   goForward:       ()    => ipcRenderer.send('browser:forward'),
   reload:          ()    => ipcRenderer.send('browser:reload'),
   setOpacity:      (v)   => ipcRenderer.send('window:opacity', v),
-  setAlwaysOnTop:  (v)   => ipcRenderer.send('window:alwaysOnTop', v),
   getUrl:          ()    => ipcRenderer.invoke('browser:getUrl'),
   setChromeHeight: (h)   => ipcRenderer.send('chrome:height', h),
+  screenshotToChat:()    => ipcRenderer.invoke('browser:screenshotToChat'),
+  insertText:      (t)   => ipcRenderer.invoke('browser:insertText', t),
 
   onUrlUpdate:    (fn) => ipcRenderer.on('browser:url',     (_, url)   => fn(url)),
   onLoadingChange:(fn) => ipcRenderer.on('browser:loading', (_, v)     => fn(v)),

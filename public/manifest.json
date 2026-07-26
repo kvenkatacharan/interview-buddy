@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Interview Buddy",
+  "version": "1.0.0",
+  "description": "AI interview co-pilot that floats over your tab and stays hidden from screen share",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["https://api.anthropic.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Interview Buddy",
+    "default_icon": {
+      "48": "favicon.svg"
+    }
+  },
+  "options_page": "index.html"
+}
