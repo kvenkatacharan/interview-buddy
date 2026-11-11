@@ -68,11 +68,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 300px;
+  width: 190px;
   background: #ffffff;
   border: 1px solid transparent;
   border-radius: 999px;
-  padding: 0 14px 0 10px;
+  padding: 0 12px 0 10px;
   height: 32px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -119,7 +119,7 @@
 }
 
 .opacity-control input[type='range'] {
-  width: 120px;
+  width: 72px;
   height: 3px;
   accent-color: #1a73e8;
 }
@@ -148,8 +148,8 @@
 }
 
 .text-btn {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
   border: 0;
@@ -158,13 +158,49 @@
   color: #3c4043;
   cursor: pointer;
   padding: 0;
-  font: 700 15px/1 system-ui, sans-serif;
+  font: 700 14px/1 system-ui, sans-serif;
   text-transform: lowercase;
 }
 
 .text-btn:hover {
   background: rgba(0, 0, 0, 0.12);
   color: #1a73e8;
+}
+
+.text-btn.active {
+  background: rgba(26, 115, 232, 0.16);
+  color: #1a73e8;
+}
+
+.mode-btn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #5f6368;
+  cursor: pointer;
+  padding: 0;
+}
+
+.mode-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #1a73e8;
+}
+
+.mode-btn.active {
+  background: #1a73e8;
+  color: #ffffff;
+}
+
+.ghost-banner {
+  padding: 4px 12px;
+  background: #e8f0fe;
+  color: #1967d2;
+  font: 11px/1.3 system-ui, sans-serif;
+  text-align: center;
 }
 
 .capture-error {
@@ -175,7 +211,7 @@
 }
 
 /* ── Narrow window: drop the search bar, keep only the controls ─────────── */
-@media (max-width: 640px) {
+@media (max-width: 680px) {
   .address-form {
     display: none;
   }
@@ -217,6 +253,30 @@
 
   .text-btn:hover {
     background: rgba(255, 255, 255, 0.18);
+    color: #8ab4f8;
+  }
+
+  .text-btn.active {
+    background: rgba(138, 180, 248, 0.22);
+    color: #8ab4f8;
+  }
+
+  .mode-btn {
+    color: #9aa0a6;
+  }
+
+  .mode-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #8ab4f8;
+  }
+
+  .mode-btn.active {
+    background: #8ab4f8;
+    color: #202124;
+  }
+
+  .ghost-banner {
+    background: #1e3a5f;
     color: #8ab4f8;
   }
 

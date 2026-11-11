@@ -73,6 +73,10 @@ function App() {
   const [canFwd, setCanFwd] = useState(false)
   const [capturing, setCapturing] = useState(false)
   const [captureError, setCaptureError] = useState('')
+  const [activePreset, setActivePreset] = useState('c')
+  const [clipboardMode, setClipboardMode] = useState(false)
+  const [teleprompterMode, setTeleprompterMode] = useState(false)
+  const [ghostMode, setGhostMode] = useState(false)
 
   // Tell main process where the shell ends so it can position WebContentsView below it
   useLayoutEffect(() => {
@@ -96,6 +100,10 @@ function App() {
       setCanBack(b)
       setCanFwd(f)
     })
+    window.electronAPI.onClipboardMode?.((v) => setClipboardMode(v))
+    window.electronAPI.onTeleprompterMode?.((v) => setTeleprompterMode(v))
+    window.electronAPI.onGhostMode?.((v) => setGhostMode(v))
+    window.electronAPI.onOpacitySync?.((v) => setOpacity(v))
   }, [])
 
   function handleOpacityChange(e) {
@@ -123,15 +131,35 @@ function App() {
     }
   }
 
-  async function handleInsertText(text) {
+  async function handleInsertText(label, text) {
     if (!window.electronAPI) return
+    setActivePreset(label)
+    window.electronAPI.setActivePreset?.(label)
     setCaptureError('')
     try {
-      const result = await window.electronAPI.insertText(text)
+      const result = await window.electronAPI.insertText(text, true)
       if (!result?.ok) setCaptureError(result?.error || 'Insert failed')
     } catch (err) {
       setCaptureError(err.message)
     }
+  }
+
+  async function handleToggleClipboard() {
+    if (!window.electronAPI?.toggleClipboardMode) return
+    const next = await window.electronAPI.toggleClipboardMode()
+    setClipboardMode(Boolean(next))
+  }
+
+  async function handleToggleTeleprompter() {
+    if (!window.electronAPI?.toggleTeleprompter) return
+    const next = await window.electronAPI.toggleTeleprompter()
+    setTeleprompterMode(Boolean(next))
+  }
+
+  async function handleToggleGhost() {
+    if (!window.electronAPI?.toggleGhostMode) return
+    const next = await window.electronAPI.toggleGhostMode()
+    setGhostMode(Boolean(next))
   }
 
   return (
@@ -217,15 +245,63 @@ function App() {
               </svg>
             </button>
 
+            <button
+              type="button"
+              className={`mode-btn ${clipboardMode ? 'active' : ''}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleToggleClipboard}
+              aria-label="Toggle Copy-to-Ask Clipboard Listener"
+              title={`Copy-to-Ask Clipboard Listener (${clipboardMode ? 'ON' : 'OFF'}) • Cmd+Shift+L`}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M16 2H8a2 2 0 0 0-2 2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1a2 2 0 0 0-2-2Zm-8 2h8v2H8V4Zm11 16H5V6h1v2h12V6h1v14Z"
+                />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              className={`mode-btn ${teleprompterMode ? 'active' : ''}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleToggleTeleprompter}
+              aria-label="Toggle Teleprompter Eye-Line Mode"
+              title={`Teleprompter Eye-Line Mode (${teleprompterMode ? 'ON' : 'OFF'}) • Cmd+Shift+T`}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M3 4h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm1 2v8h16V6H4Zm4 12h8v2H8v-2Z"
+                />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              className={`mode-btn ${ghostMode ? 'active' : ''}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleToggleGhost}
+              aria-label="Toggle Click-Through Ghost Mode"
+              title={`Click-Through Ghost Mode (${ghostMode ? 'ON — press Cmd+Shift+\\ to exit' : 'OFF'}) • Cmd+Shift+\\`}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M12 2a9 9 0 0 0-9 9v11l3-3 3 3 3-3 3 3 3-3 3 3V11a9 9 0 0 0-9-9Zm-3 8a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm6 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z"
+                />
+              </svg>
+            </button>
+
             {QUICK_TEXTS.map(({ label, text }) => (
               <button
                 key={label}
                 type="button"
-                className="text-btn"
+                className={`text-btn ${activePreset === label ? 'active' : ''}`}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => handleInsertText(text)}
-                aria-label={`Insert "${text}"`}
-                title={`Insert "${text}"`}
+                onClick={() => handleInsertText(label, text)}
+                aria-label={`Insert & Send "${label.toUpperCase()}" (Cmd+Shift+${label.toUpperCase()} for 1-Shot Screenshot+Send)`}
+                title={`Insert & Send (${label.toUpperCase()}) • 1-Shot Screenshot+Send: Cmd+Shift+${label.toUpperCase()}`}
               >
                 {label}
               </button>
@@ -233,6 +309,11 @@ function App() {
           </div>
         </header>
 
+        {ghostMode && (
+          <div className="ghost-banner">
+            Click-Through Ghost Mode ON — press <strong>Cmd+Shift+\</strong> to interact with widget
+          </div>
+        )}
         {captureError && <div className="capture-error">{captureError}</div>}
       </div>
     </div>
