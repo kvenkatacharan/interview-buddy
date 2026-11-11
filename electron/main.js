@@ -1,4 +1,4 @@
-import { app, BrowserWindow, WebContentsView, ipcMain, desktopCapturer, clipboard, screen, globalShortcut } from 'electron'
+import { app, BrowserWindow, WebContentsView, ipcMain, desktopCapturer, clipboard, nativeImage, screen, globalShortcut } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -10,20 +10,29 @@ const DEFAULT_HEIGHT = 600
 
 let mainWin = null
 let browserView = null
+let isQuitting = false
 let chromeHeight = 80 // updated dynamically from renderer
 let hSide = 'center' // 'left' | 'center' | 'right'
 let vSide = 'top'    // 'top' | 'bottom'
+
+function hasValidWindow() {
+  return Boolean(mainWin && !mainWin.isDestroyed())
+}
+
+function hasValidBrowserView() {
+  return Boolean(browserView && browserView.webContents && !browserView.webContents.isDestroyed())
+}
 
 const FIND_CHAT_INPUT_JS = `
   document.querySelector('#prompt-textarea, div[contenteditable="true"], textarea')
 `
 
 // ── IPC handlers (module-level so they're registered once) ─────────────────
-ipcMain.on('browser:navigate', (_, url) => browserView?.webContents.loadURL(url))
-ipcMain.on('browser:back',     ()       => { if (browserView?.webContents.navigationHistory.canGoBack())    browserView.webContents.navigationHistory.goBack() })
-ipcMain.on('browser:forward',  ()       => { if (browserView?.webContents.navigationHistory.canGoForward()) browserView.webContents.navigationHistory.goForward() })
+ipcMain.on('browser:navigate', (_, url) => { if (hasValidBrowserView()) browserView.webContents.loadURL(url) })
+ipcMain.on('browser:back',     ()       => { if (hasValidBrowserView() && browserView.webContents.navigationHistory.canGoBack())    browserView.webContents.navigationHistory.goBack() })
+ipcMain.on('browser:forward',  ()       => { if (hasValidBrowserView() && browserView.webContents.navigationHistory.canGoForward()) browserView.webContents.navigationHistory.goForward() })
 ipcMain.on('browser:reload', () => {
-  if (!browserView) return
+  if (!hasValidBrowserView()) return
   const url = browserView.webContents.getURL()
   if (url && url !== 'about:blank') {
     browserView.webContents.loadURL(url)
@@ -31,17 +40,22 @@ ipcMain.on('browser:reload', () => {
     browserView.webContents.reload()
   }
 })
-ipcMain.handle('browser:getUrl', ()      => browserView?.webContents.getURL() ?? '')
+ipcMain.handle('browser:getUrl', ()      => (hasValidBrowserView() ? browserView.webContents.getURL() : ''))
 ipcMain.handle('browser:screenshotToChat', async () => {
-  if (!browserView) return { ok: false, error: 'No browser view' }
+  if (!hasValidWindow() || !hasValidBrowserView()) return { ok: false, error: 'No browser view' }
   try {
     const display = screen.getPrimaryDisplay()
-    const scale = display.scaleFactor || 1
+    // Capture at 1.35x logical screen resolution (~2040x1325) for ultra-sharp text
+    // while keeping the pasted image under 3 MB.
+    const captureScale = Math.min(display.scaleFactor || 1, 1.35)
+    const targetWidth = Math.max(1, Math.round(display.size.width * captureScale))
+    const targetHeight = Math.max(1, Math.round(display.size.height * captureScale))
+
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: {
-        width: Math.round(display.size.width * scale),
-        height: Math.round(display.size.height * scale),
+        width: targetWidth,
+        height: targetHeight,
       },
     })
     const source = sources.find((s) => s.display_id === String(display.id)) || sources[0]
@@ -49,17 +63,49 @@ ipcMain.handle('browser:screenshotToChat', async () => {
       return { ok: false, error: 'Screen capture unavailable — check Screen Recording permission in System Settings.' }
     }
 
+    // Use lossless PNG for razor-sharp letters when <= 2.8 MB; otherwise use JPEG (92)
+    // so the final image is always under 3 MB.
+    const resized = source.thumbnail.resize({ width: targetWidth, height: targetHeight, quality: 'best' })
+    const MAX_BYTES = 2.8 * 1024 * 1024
+    let imgBuffer = resized.toPNG()
+    if (imgBuffer.length > MAX_BYTES) {
+      imgBuffer = resized.toJPEG(92)
+    }
+    const compactImage = nativeImage.createFromBuffer(imgBuffer, { scaleFactor: 1.0 })
+
     // Content-protected windows (this one included) don't appear in the capture, so
     // the screenshot only ever contains what's behind Interview Buddy.
-    clipboard.writeImage(source.thumbnail)
+    clipboard.writeImage(compactImage)
 
-    // Focus whatever the chat input is before pasting, so the paste lands there.
+    // Restore OS, window, and WebContentsView focus first (hiding/unhiding via Cmd+\
+    // or clicking the toolbar leaves browserView unfocused, which causes paste() to drop).
+    app.focus({ steal: true })
+    mainWin.focus()
+    browserView.webContents.focus()
+
+    // Focus whatever the chat input is after browserView has focus, ensure caret selection
+    // is inside the editor, and wait a frame before pasting.
     await browserView.webContents.executeJavaScript(`
-      (function () {
+      new Promise((resolve) => {
         var el = ${FIND_CHAT_INPUT_JS};
-        if (el) el.focus();
-      })();
+        if (el) {
+          el.focus();
+          if (el.isContentEditable) {
+            var sel = window.getSelection();
+            if (sel && (!sel.anchorNode || !el.contains(sel.anchorNode))) {
+              var range = document.createRange();
+              range.selectNodeContents(el);
+              range.collapse(false);
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+          }
+        }
+        requestAnimationFrame(() => setTimeout(resolve, 30));
+      })
     `, true)
+
+    if (!hasValidBrowserView()) return { ok: false, error: 'Browser view closed' }
     browserView.webContents.focus()
     browserView.webContents.paste()
     return { ok: true }
@@ -68,8 +114,11 @@ ipcMain.handle('browser:screenshotToChat', async () => {
   }
 })
 ipcMain.handle('browser:insertText', async (_, text) => {
-  if (!browserView) return { ok: false, error: 'No browser view' }
+  if (!hasValidWindow() || !hasValidBrowserView()) return { ok: false, error: 'No browser view' }
   try {
+    app.focus({ steal: true })
+    mainWin.focus()
+    browserView.webContents.focus()
     const found = await browserView.webContents.executeJavaScript(`
       (function () {
         var el = ${FIND_CHAT_INPUT_JS};
@@ -85,14 +134,14 @@ ipcMain.handle('browser:insertText', async (_, text) => {
     return { ok: false, error: err.message }
   }
 })
-ipcMain.on('window:opacity',   (_, v)   => mainWin?.setOpacity(v))
+ipcMain.on('window:opacity',   (_, v)   => { if (hasValidWindow()) mainWin.setOpacity(v) })
 ipcMain.on('chrome:height',    (_, h)   => {
   chromeHeight = h
   updateViewBounds()
 })
 
 function applyPosition() {
-  if (!mainWin) return
+  if (!hasValidWindow()) return
   const { x: waX, y: waY, width: waW, height: waH } = screen.getPrimaryDisplay().workArea
   const [w, h] = mainWin.getSize()
 
@@ -106,26 +155,37 @@ function applyPosition() {
 
 function registerShortcuts() {
   globalShortcut.register('CommandOrControl+\\', () => {
-    if (!mainWin) return
-    if (mainWin.isVisible()) mainWin.hide()
-    else mainWin.show()
+    if (!hasValidWindow()) {
+      createWindow()
+      return
+    }
+    if (mainWin.isVisible()) {
+      mainWin.hide()
+    } else {
+      app.focus({ steal: true })
+      mainWin.show()
+      mainWin.focus()
+      if (hasValidBrowserView()) browserView.webContents.focus()
+    }
   })
 
   // Alternates the widget between the right and left edges of the screen
   globalShortcut.register('CommandOrControl+Alt+Right', () => {
+    if (!hasValidWindow()) return
     hSide = hSide === 'right' ? 'left' : 'right'
     applyPosition()
   })
 
   // Alternates the widget between the top and bottom edges of the screen
   globalShortcut.register('CommandOrControl+Alt+Down', () => {
+    if (!hasValidWindow()) return
     vSide = vSide === 'bottom' ? 'top' : 'bottom'
     applyPosition()
   })
 }
 
 function updateViewBounds() {
-  if (!mainWin || !browserView) return
+  if (!hasValidWindow() || !hasValidBrowserView()) return
   const [w, h] = mainWin.getContentSize()
   const shellTop = Math.max(0, h - chromeHeight)
   browserView.setBounds({ x: 0, y: 0, width: w, height: shellTop })
@@ -197,6 +257,7 @@ function createWindow() {
 
   // Relay navigation events to the React renderer
   browserView.webContents.on('did-navigate', (_, url) => {
+    if (!hasValidWindow() || !hasValidBrowserView()) return
     mainWin.webContents.send('browser:url', url)
     mainWin.webContents.send('browser:navstate', {
       canBack: browserView.webContents.navigationHistory.canGoBack(),
@@ -204,12 +265,13 @@ function createWindow() {
     })
   })
   browserView.webContents.on('did-navigate-in-page', (_, url, isMainFrame) => {
-    if (isMainFrame) mainWin.webContents.send('browser:url', url)
+    if (isMainFrame && hasValidWindow()) mainWin.webContents.send('browser:url', url)
   })
   browserView.webContents.on('did-start-loading', () => {
-    mainWin.webContents.send('browser:loading', true)
+    if (hasValidWindow()) mainWin.webContents.send('browser:loading', true)
   })
   browserView.webContents.on('did-stop-loading', () => {
+    if (!hasValidWindow() || !hasValidBrowserView()) return
     mainWin.webContents.send('browser:loading', false)
     mainWin.webContents.send('browser:navstate', {
       canBack: browserView.webContents.navigationHistory.canGoBack(),
@@ -221,7 +283,8 @@ function createWindow() {
   mainWin.webContents.on('before-input-event', (event, input) => {
     if (input.meta && input.key.toLowerCase() === 'r') {
       event.preventDefault()
-      const url = browserView?.webContents.getURL()
+      if (!hasValidBrowserView()) return
+      const url = browserView.webContents.getURL()
       if (url && url !== 'about:blank') {
         if (input.shift) {
           browserView.webContents.reloadIgnoringCache()
@@ -233,6 +296,20 @@ function createWindow() {
   })
 
   mainWin.on('resize', updateViewBounds)
+
+  // Hide instead of destroying on red traffic-light click / Cmd+W so the session
+  // stays alive and Cmd+\ never hits a destroyed BrowserWindow.
+  mainWin.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault()
+      mainWin.hide()
+    }
+  })
+
+  mainWin.on('closed', () => {
+    mainWin = null
+    browserView = null
+  })
 
   if (isDev) {
     mainWin.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -248,12 +325,23 @@ app.whenReady().then(() => {
   registerShortcuts()
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (!hasValidWindow()) {
+      createWindow()
+    } else {
+      app.focus({ steal: true })
+      mainWin.show()
+      mainWin.focus()
+      if (hasValidBrowserView()) browserView.webContents.focus()
+    }
   })
 })
 
+app.on('before-quit', () => {
+  isQuitting = true
+})
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  app.quit()
 })
 
 app.on('will-quit', () => {

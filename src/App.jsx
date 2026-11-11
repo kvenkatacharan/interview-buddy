@@ -203,6 +203,7 @@ function App() {
             <button
               type="button"
               className="capture-btn"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={handleScreenshot}
               disabled={capturing}
               aria-label={capturing ? 'Capturing…' : 'Screenshot to ChatGPT'}
@@ -221,6 +222,7 @@ function App() {
                 key={label}
                 type="button"
                 className="text-btn"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleInsertText(text)}
                 aria-label={`Insert "${text}"`}
                 title={`Insert "${text}"`}
