@@ -1,17 +1,21 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
-contextBridge.exposeInMainWorld('electronAPI', {
-  navigate:        (url) => ipcRenderer.send('browser:navigate', url),
-  goBack:          ()    => ipcRenderer.send('browser:back'),
-  goForward:       ()    => ipcRenderer.send('browser:forward'),
-  reload:          ()    => ipcRenderer.send('browser:reload'),
-  setOpacity:      (v)   => ipcRenderer.send('window:opacity', v),
-  getUrl:          ()    => ipcRenderer.invoke('browser:getUrl'),
-  setChromeHeight: (h)   => ipcRenderer.send('chrome:height', h),
-  screenshotToChat:()    => ipcRenderer.invoke('browser:screenshotToChat'),
-  insertText:      (t)   => ipcRenderer.invoke('browser:insertText', t),
+contextBridge.exposeInMainWorld('api', {
+  settingsStatus: () => ipcRenderer.invoke('settings:status'),
+  setApiKey: (key) => ipcRenderer.invoke('settings:setApiKey', key),
 
-  onUrlUpdate:    (fn) => ipcRenderer.on('browser:url',     (_, url)   => fn(url)),
-  onLoadingChange:(fn) => ipcRenderer.on('browser:loading', (_, v)     => fn(v)),
-  onNavState:     (fn) => ipcRenderer.on('browser:navstate',(_, state) => fn(state)),
+  listSessions: () => ipcRenderer.invoke('sessions:list'),
+  deleteSession: (id) => ipcRenderer.invoke('sessions:delete', id),
+
+  startInterview: (settings) => ipcRenderer.invoke('interview:start', settings),
+  sendTurn: (turn) => ipcRenderer.invoke('interview:turn', turn),
+  endInterview: (args) => ipcRenderer.invoke('interview:end', args),
+  abandonInterview: (sessionId) => ipcRenderer.invoke('interview:abandon', sessionId),
+
+  // Returns an unsubscribe function.
+  onDelta: (fn) => {
+    const listener = (_, payload) => fn(payload)
+    ipcRenderer.on('interview:delta', listener)
+    return () => ipcRenderer.removeListener('interview:delta', listener)
+  },
 })

@@ -1,18 +1,27 @@
-# React + Vite
+# Interview Buddy
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A desktop app for practicing coding interviews with an AI interviewer, and for finding out what keeps going wrong.
 
-Currently, two official plugins are available:
+1. **Pick a setup.** Language, difficulty, topic and length.
+2. **Do the interview.** The interviewer (Claude) presents a problem and responds like a real one. It answers clarifying questions, pushes back on shaky approaches, gives graduated hints only when you ask, and asks you to test your code and state its complexity when you submit. It sees your editor each time you send a message.
+3. **Get a debrief.** You're scored 1–4 on problem understanding, approach, correctness, code quality, complexity analysis, testing and communication, with evidence from the transcript. You also get concrete issues with how to fix them, what to practice next, and a reference solution.
+4. **Track weak spots.** Issues are tagged from a fixed list and tallied across sessions on the home screen. With "Target my weak spots" on, the next interviewer picks a problem that tests them.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Running it
 
-## React Compiler
+```bash
+npm install
+npm run electron:dev     # dev mode with hot reload
+npm run dist:mac         # build a .dmg
+```
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+On first launch, open **Settings** and paste an Anthropic API key. It's encrypted with the system keychain (Electron `safeStorage`) and kept in the app's user-data folder. If no key is saved, the app falls back to `ANTHROPIC_API_KEY` from the environment.
 
-Note: This will impact Vite dev & build performances.
+Sessions are stored in `sessions.json` in the same folder (`~/Library/Application Support/interview-buddy` on macOS).
 
-## Expanding the ESLint configuration
+## Layout
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- `electron/interviewer.js`: interviewer prompt, turn handling and the debrief (structured JSON output)
+- `electron/taxonomy.js`: score dimensions, issue tags and weak-spot aggregation (shared with the UI)
+- `electron/store.js`: API key and session persistence
+- `src/screens/`: Home, Interview, Report, Settings
